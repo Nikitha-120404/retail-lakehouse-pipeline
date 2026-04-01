@@ -1,0 +1,50 @@
+[build-system]
+requires      = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name        = "nexcart-lakehouse"
+version     = "0.1.0"
+description = "Scalable Data Platform for Real-Time Analytics & AI — NexCart"
+requires-python = ">=3.10"
+readme      = "README.md"
+license     = {text = "MIT"}
+
+[project.urls]
+Repository = "https://github.com/yourname/nexcart-lakehouse"
+
+# ── Pytest ────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths       = ["tests"]
+python_files    = ["test_*.py"]
+python_classes  = ["Test*"]
+python_functions= ["test_*"]
+addopts         = "-v --tb=short"
+filterwarnings  = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
+
+# ── Coverage ──────────────────────────────────────────────────────
+[tool.coverage.run]
+source    = ["src"]
+omit      = ["*/__init__.py", "*/tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty   = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+]
+
+# ── Ruff (linting) ────────────────────────────────────────────────
+[tool.ruff]
+line-length    = 100
+target-version = "py310"
+select         = ["E", "F", "I", "UP"]
+ignore         = ["E501"]
+
+[tool.ruff.isort]
+known-first-party = ["src"]

@@ -1,0 +1,50 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.pyo
+
+# Data (generated locally — not committed to Git)
+data/raw/
+data/bronze/
+data/silver/
+data/gold/
+data/features/
+data/checkpoints/
+
+# Logs
+logs/
+
+# Spark
+derby.log
+metastore_db/
+spark-warehouse/
+
+# Airflow runtime (never commit these)
+airflow/logs/
+airflow/home/
+airflow/airflow.db
+airflow/*.db
+airflow/dags/__pycache__/
+
+# Docker
+.docker/
+
+# Secrets
+.env
+
+# IDE
+.vscode/
+.idea/
+*.DS_Store
+
+# Notebooks (outputs only)
+notebooks/.ipynb_checkpoints/
+# Extra ignores
+venv/
+tmp/
+*.log

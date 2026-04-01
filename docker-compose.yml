@@ -1,0 +1,163 @@
+version: "3.9"
+
+# ============================================================
+# NexCart Lakehouse — Docker Compose (Airflow + Postgres)
+#
+# Quick start
+# ───────────
+#   Step 1 — build the image and init Airflow (run once):
+#     docker compose up airflow-init
+#
+#   Step 2 — start Airflow:
+#     docker compose up airflow-webserver airflow-scheduler
+#
+#   Step 3 — open the UI:
+#     http://localhost:8080   login: admin / admin
+#
+#   Stop everything:
+#     docker compose down
+#
+#   Wipe DB and start fresh:
+#     docker compose down -v
+# ============================================================
+
+# ── Shared image build ────────────────────────────────────────────────────────
+# Builds once from airflow/Dockerfile (Java 17 + PySpark + all deps).
+# Subsequent starts reuse the built image.
+x-airflow-image: &airflow-image
+  build:
+    context: ./airflow
+    dockerfile: Dockerfile
+
+# ── Shared environment + volumes used by all Airflow services ─────────────────
+x-airflow-common: &airflow-common
+  <<: *airflow-image
+  environment:
+    # ── Airflow core ──────────────────────────────────────────────────────────
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
+    AIRFLOW__CORE__FERNET_KEY: "d7h3kLmN9pQrStUvWxYzAbCdEfGhIjKlMnOpQrStUvW="
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "1"
+    AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth"
+    AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "15"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    # ── NexCart project ───────────────────────────────────────────────────────
+    NEXCART_ROOT: /opt/nexcart
+    NEXCART_PYTHON: python
+    PYTHONPATH: /opt/nexcart
+    NEXCART_CONFIG: /opt/nexcart/config/settings.yaml
+    # ── Audit logger PostgreSQL connection ────────────────────────────────────
+    # audit_logger.py reads these vars; defaults to localhost without them.
+    # Inside Docker, the Postgres container is reachable via its service name.
+    # audit_events table is written into the same 'airflow' database —
+    # no separate database or container is required.
+    NEXCART_PG_HOST: airflow-db
+    NEXCART_PG_PORT: "5432"
+    NEXCART_PG_DB: airflow
+    NEXCART_PG_USER: airflow
+    NEXCART_PG_PASSWORD: airflow
+    # ── Java (OpenJDK 17 installed in Dockerfile) ─────────────────────────────
+    JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+    PATH: /home/airflow/.local/bin:/usr/lib/jvm/java-17-openjdk-amd64/bin:/usr/local/bin:/usr/bin:/bin
+    # ── Spark Windows-safe settings ───────────────────────────────────────────
+    SPARK_LOCAL_DIRS: /opt/nexcart/tmp/spark
+    PYSPARK_PYTHON: python
+    PYSPARK_DRIVER_PYTHON: python
+  volumes:
+    # ── Airflow internals ─────────────────────────────────────────────────────
+    - ./airflow/dags:/opt/airflow/dags          # DAG files
+    - ./airflow/logs:/opt/airflow/logs          # task logs (visible in UI)
+    - ./airflow/plugins:/opt/airflow/plugins    # custom operators (empty is fine)
+    # ── NexCart project (mounted read-write so pipeline can write outputs) ────
+    - ./src:/opt/nexcart/src
+    - ./scripts:/opt/nexcart/scripts
+    - ./config:/opt/nexcart/config
+    - ./data:/opt/nexcart/data
+    - ./logs:/opt/nexcart/logs
+    - ./tmp:/opt/nexcart/tmp
+  depends_on:
+    airflow-db:
+      condition: service_healthy
+
+# ════════════════════════════════════════════════════════════════════════════
+services:
+
+  # ── Airflow metadata database ─────────────────────────────────────────────
+  airflow-db:
+    image: postgres:15
+    ports:
+      - "5433:5432"
+    container_name: nexcart-airflow-db
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ── One-shot initialiser: migrate DB + create admin user ──────────────────
+  # Run this ONCE with:  docker compose up airflow-init
+  airflow-init:
+    <<: *airflow-common
+    container_name: nexcart-airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "=== Ensuring log directory exists and is writable ==="
+        mkdir -p /opt/airflow/logs
+        chmod -R 775 /opt/airflow/logs
+
+        echo "=== Migrating Airflow database ==="
+        airflow db migrate
+
+        echo "=== Creating admin user ==="
+        airflow users create \
+          --username admin \
+          --password admin \
+          --firstname NexCart \
+          --lastname Admin \
+          --role Admin \
+          --email admin@nexcart.io || echo "User already exists, skipping."
+
+        echo "=== Unpausing NexCart DAG ==="
+        airflow dags unpause nexcart_lakehouse_daily || true
+
+        echo ""
+        echo "=============================="
+        echo "  Airflow initialised OK"
+        echo "  Login: admin / admin"
+        echo "=============================="
+    restart: "no"
+
+  # ── Airflow web UI — http://localhost:8080 ────────────────────────────────
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: nexcart-airflow-webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ── Airflow scheduler ─────────────────────────────────────────────────────
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: nexcart-airflow-scheduler
+    command: scheduler
+    restart: unless-stopped
+
+volumes:
+  airflow-db-volume:

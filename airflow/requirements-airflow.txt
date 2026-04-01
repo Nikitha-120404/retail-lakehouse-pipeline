@@ -1,0 +1,13 @@
+# requirements-airflow.txt
+# ─────────────────────────
+# Python packages installed into the custom Airflow Docker image.
+# These must match what the NexCart pipeline expects.
+
+pyspark==3.5.0
+pyarrow>=14.0,<16.0
+pandas>=2.0,<3.0
+numpy>=1.24,<2.0
+pyyaml>=6.0
+psycopg2-binary>=2.9
+faker>=24.0
+scikit-learn>=1.3

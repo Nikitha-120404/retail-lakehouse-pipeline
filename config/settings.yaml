@@ -1,0 +1,88 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# NexCart Lakehouse — Central Configuration (Parquet Edition)
+# ══════════════════════════════════════════════════════════════════════════════
+
+project:
+  name: nexcart_lakehouse
+  version: "2.0.0"
+  environment: local
+
+# ─── Storage Paths (all relative to project root) ─────────────────────────────
+# Raw  = CSV  (source files, never modified)
+# Rest = Parquet (no Delta Lake)
+paths:
+  base_dir:   data
+  raw:        data/raw
+  bronze:     data/bronze
+  silver:     data/silver
+  gold:       data/gold
+  features:   data/features
+  checkpoints: data/checkpoints
+  tmp:        tmp/spark
+
+# ─── Spark Configuration ──────────────────────────────────────────────────────
+spark:
+  app_name: NexCartLakehouse
+  master: local[*]
+  driver_memory: 4g
+  executor_memory: 4g
+  shuffle_partitions: 8
+
+# ─── Data Generation ──────────────────────────────────────────────────────────
+data_generation:
+  seed: 42
+  num_customers:   5000
+  num_products:     500
+  num_orders:     50000
+  num_payments:   50000
+  num_inventory:  10000
+  num_clickstream: 200000
+  num_shipments:  45000
+  date_range:
+    start: "2023-01-01"
+    end:   "2024-12-31"
+
+# ─── Table Names ──────────────────────────────────────────────────────────────
+tables:
+  bronze:
+    - customers
+    - products
+    - orders
+    - payments
+    - inventory
+    - clickstream
+    - shipments
+  silver:
+    - customers_clean
+    - products_clean
+    - orders_enriched
+    - payments_validated
+    - inventory_clean
+    - clickstream_sessions
+    - shipments_enriched
+  gold:
+    - daily_revenue
+    - customer_ltv
+    - product_performance
+    - inventory_health
+    - fulfillment_kpis
+  features:
+    - customer_features
+    - product_features
+    - order_risk_features
+    - delivery_features
+
+# ─── Data Quality Thresholds ──────────────────────────────────────────────────
+quality:
+  max_null_pct:      0.05
+  min_row_count:     100
+  max_duplicate_pct: 0.01
+
+# ─── Airflow ──────────────────────────────────────────────────────────────────
+airflow:
+  schedule_bronze:   "0 1 * * *"
+  schedule_silver:   "0 2 * * *"
+  schedule_gold:     "0 3 * * *"
+  schedule_features: "0 4 * * *"
+  retries: 2
+  retry_delay_minutes: 5
