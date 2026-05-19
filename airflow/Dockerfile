@@ -26,3 +26,4 @@ USER airflow
 
 COPY requirements-airflow.txt /tmp/requirements-airflow.txt
 RUN pip install --no-cache-dir -r /tmp/requirements-airflow.txt
+RUN pip install --no-cache-dir streamlit plotly psycopg2-binary

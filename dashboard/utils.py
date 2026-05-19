@@ -28,8 +28,8 @@ sys.path.insert(0, str(ROOT))
 # psycopg2 is used directly because pandas 2.x + SQLAlchemy 1.4 are incompatible
 # (pd.read_sql no longer accepts a SQLAlchemy 1.4 Connection object).
 _PG_KWARGS: dict = dict(
-    host="localhost",
-    port=5433,
+    host="airflow-db",
+    port=5432,
     dbname="airflow",
     user="airflow",
     password="airflow",
