@@ -1,544 +1,406 @@
 # NexCart Lakehouse
 
-### Production-Grade Retail Data Platform — Medallion Architecture v2.0
+### End-to-End Retail Data Engineering Platform
 
-> End-to-end data lakehouse built with **PySpark 3.5**, **Apache Airflow**, **PostgreSQL**, and **Streamlit**.
-> Implements the full **Medallion Architecture** (Bronze → Silver → Gold → Features) with a live analytics dashboard, automated orchestration, audit logging, and data quality monitoring.
-> Fully compatible with **Windows, Mac, and Linux** — no Delta Lake or winutils required.
+NexCart Lakehouse is an end-to-end retail data engineering project built with **PySpark, Apache Airflow, PostgreSQL, Docker, and Streamlit**.
+
+The project simulates a retail/e-commerce data platform where raw business data is processed through a lakehouse-style pipeline using the layered flow:
+
+**Raw → Bronze → Silver → Gold → Features**
+
+Gold analytics tables are served through **PostgreSQL**, and the results are visualized in an interactive **Streamlit dashboard**.
+
+---
+
+## Project Overview
+
+This project processes synthetic retail data including:
+
+- Customers
+- Products
+- Orders
+- Payments
+- Inventory
+- Clickstream
+- Shipments
+
+The pipeline cleans, enriches, aggregates, and prepares data for analytics and machine learning use cases. Apache Airflow orchestrates the workflow, PostgreSQL stores the Gold analytics tables, and Streamlit provides the dashboard interface.
 
 ---
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                          NexCart Lakehouse Pipeline                             │
-└─────────────────────────────────────────────────────────────────────────────────┘
+```text
+Raw CSV Data
+     ↓
+Bronze Layer
+     ↓
+Silver Layer
+     ↓
+Gold Layer
+     ↓
+PostgreSQL Serving Layer
+     ↓
+Streamlit Dashboard
 
-  [Raw CSV Files]
-       │
-       │  Schema enforcement · Audit columns · Partitioning
-       ▼
-  [Bronze Layer — Parquet]
-       │
-       │  Type casting · Deduplication · Business rule validation
-       ▼
-  [Silver Layer — Parquet]
-       │
-       ├──────────────────────────────────────┐
-       │                                      │
-       │  KPI aggregations · Pre-aggregated   │  ML-ready features · Lookback
-       │  Business metrics                    │  windows · Encoded variables
-       ▼                                      ▼
-  [Gold Layer]                          [Features Layer — Parquet]
-  ├── Parquet (archive)
-  └── PostgreSQL (serving layer)
-       │
-       │  psycopg2 · @st.cache_data · Live queries
-       ▼
-  [Streamlit Dashboard]
-  Executive Overview · Gold Explorer · Pipeline Monitor · Quality Checks
+Apache Airflow orchestrates the complete pipeline through Docker.
+DuckDB is included as an optional utility for local Parquet exploration.
+Tech Stack
+Component	Technology
+Data Processing	Python, PySpark
+Orchestration	Apache Airflow
+Containerization	Docker, Docker Compose
+Serving Layer	PostgreSQL
+Dashboard	Streamlit, Plotly
+Optional Query Utility	DuckDB
+Data Format	CSV, Parquet
+Configuration	YAML
+Logging / Audit	Python logging, JSONL audit logs
+Project Features
+Feature	Description
+Layered Lakehouse Pipeline	Raw, Bronze, Silver, Gold, and Features layers
+PySpark Transformations	Cleans, joins, validates, and aggregates retail data
+Airflow Orchestration	Runs the full pipeline with a Dockerized DAG
+PostgreSQL Serving Layer	Stores Gold tables for dashboard queries
+Streamlit Dashboard	Visualizes business KPIs and pipeline outputs
+Data Quality Checks	Validates curated datasets before analytics use
+Feature Engineering	Creates ML-ready feature tables
+DuckDB Utility	Optional local querying of Parquet outputs
+Data Pipeline Layers
+Raw Layer
 
-       ┌──────────────────────────────┐
-       │     Apache Airflow (Docker)  │
-       │  DAG scheduling · Run logs   │
-       │  Retry logic · Monitoring    │
-       └──────────────────────────────┘
+The Raw layer stores the original generated retail source files.
 
-       ┌──────────────────────────────┐
-       │       Audit Layer            │
-       │  pipeline_runs.jsonl         │
-       │  nexcart.log · Run history   │
-       └──────────────────────────────┘
-```
+Main raw tables:
 
----
+customers
+products
+orders
+payments
+inventory
+clickstream
+shipments
+Bronze Layer
 
-## Tech Stack
+The Bronze layer ingests raw data and prepares it for downstream processing.
 
-| Component       | Technology                        |
-|-----------------|-----------------------------------|
-| Processing      | PySpark 3.5                       |
-| Storage         | Parquet + Snappy compression      |
-| Serving Layer   | PostgreSQL 15 (Gold tables)       |
-| Orchestration   | Apache Airflow 2.9 (Docker)       |
-| Dashboard       | Streamlit + Plotly                |
-| DB Connector    | psycopg2                          |
-| Query Layer     | DuckDB (ad-hoc Parquet queries)   |
-| Config          | YAML                              |
-| Data Generation | Faker + Pandas                    |
-| Logging         | Python logging + JSONL audit log  |
+It handles:
 
----
+Reading raw CSV files
+Applying initial structure
+Adding ingestion tracking fields
+Preparing data for Silver transformations
+Silver Layer
 
-## Project Features
+The Silver layer contains cleaned and enriched data.
 
-| Feature                    | Description                                                         |
-|----------------------------|---------------------------------------------------------------------|
-| Medallion Architecture     | Bronze → Silver → Gold → Features, each layer with a clear contract |
-| PostgreSQL Serving Layer   | Gold tables written to PostgreSQL for low-latency dashboard reads   |
-| Live Streamlit Dashboard   | Multi-page analytics app reading directly from PostgreSQL           |
-| Airflow Orchestration      | Docker-based DAG with per-layer tasks, retries, and run tracking    |
-| Data Quality Framework     | Rule-based DQ checks across Silver layer with a quality report      |
-| Audit Logging              | Every pipeline run logged to JSONL with status, duration, row count |
-| Feature Engineering        | 4 ML-ready feature tables with labels for supervised learning       |
-| DuckDB Query Layer         | Query any Parquet layer without starting Spark                      |
+It handles:
 
----
+Type casting
+Null handling
+Deduplication
+Business rule validation
+Joins between related datasets
+Derived fields for analytics
 
-## Data Pipeline — Layer by Layer
+Example Silver tables:
 
-### Bronze — Raw Ingestion
-- Reads raw CSV files from `data/raw/`
-- Enforces schema and data types
-- Adds audit columns: `ingested_at`, `source_file`, `batch_id`
-- Writes immutable Parquet partitions to `data/bronze/`
-- Never modifies source files
+customers_clean
+products_clean
+orders_enriched
+payments_validated
+inventory_clean
+clickstream_sessions
+shipments_enriched
+Gold Layer
 
-### Silver — Cleaning & Enrichment
-- Reads from Bronze Parquet
-- Applies type casting, null handling, and deduplication
-- Enforces business rules (e.g., valid order statuses, price ranges)
-- Enriches records (e.g., joins customer segments, computes derived fields)
-- Writes cleaned Parquet to `data/silver/`
+The Gold layer contains business-ready analytics tables.
 
-### Gold — Business Aggregations
-- Reads from Silver Parquet
-- Computes KPI tables: revenue, customer LTV, product performance, inventory health, fulfillment
-- Writes to **two destinations**:
-  - `data/gold/` — Parquet archive for DuckDB/batch queries
-  - **PostgreSQL** — live serving layer for the Streamlit dashboard
+Gold tables are loaded into PostgreSQL and used by the Streamlit dashboard.
 
-### Features — ML Preparation
-- Reads from Silver Parquet
-- Engineers features: lookback windows, RFM scores, lag features, encoding
-- Produces 4 supervised learning datasets with labels
-- Writes to `data/features/` as Parquet
+Table	Description
+daily_revenue	Revenue, orders, and sales trends
+customer_ltv	Customer lifetime value and customer behavior
+product_performance	Product sales and performance metrics
+inventory_health	Stock status and inventory monitoring
+fulfillment_kpis	Shipment and delivery performance metrics
+Features Layer
 
-### Quality — Data Quality Checks
-- Runs rule-based DQ checks across Silver tables
-- Checks: completeness, uniqueness, referential integrity, value range
-- Produces a quality report stored as Parquet
-- Results visible in the dashboard Quality Checks page
+The Features layer prepares ML-ready datasets for analytical and machine learning use cases.
 
-### Audit — Observability
-- Every layer run writes a structured record to `logs/pipeline_runs.jsonl`
-- Fields: `layer`, `status`, `start_time`, `duration_s`, `rows_written`, `error`
-- Viewable via CLI (`--history` flag) and the Pipeline Monitor dashboard page
+Feature tables:
 
----
+customer_features
+product_features
+order_risk_features
+delivery_features
 
-## Gold Tables (PostgreSQL)
+These tables support use cases such as customer behavior analysis, demand forecasting, order risk detection, and delivery delay prediction.
 
-| Table                | Rows (approx.) | Description                          |
-|----------------------|----------------|--------------------------------------|
-| `daily_revenue`      | ~23,000        | Revenue KPIs by day / channel / segment |
-| `customer_ltv`       | ~5,000         | Lifetime value, RFM tiers, churn flag   |
-| `product_performance`| ~12,000        | Monthly sales and margin by product     |
-| `inventory_health`   | ~500           | Stock status and reorder alerts         |
-| `fulfillment_kpis`   | ~8,300         | Carrier on-time rates by week           |
+PostgreSQL Serving Layer
 
-All five tables are queried live by the dashboard via psycopg2 with `@st.cache_data(ttl=300)`.
+PostgreSQL is used as the serving layer for Gold analytics tables.
 
----
+The Streamlit dashboard reads Gold tables from PostgreSQL instead of directly reading local files. This makes the project closer to a real analytics platform where dashboards query a database layer.
 
-## ML Feature Tables (Parquet)
+pgAdmin Connection
 
-| Table                | Label          | Use Case                   |
-|----------------------|----------------|----------------------------|
-| `customer_features`  | `is_churned`   | Customer churn prediction  |
-| `product_features`   | `orders_30d`   | Demand forecasting         |
-| `order_risk_features`| `is_anomaly`   | Fraud / anomaly detection  |
-| `delivery_features`  | `is_delayed`   | Delivery delay prediction  |
+Use these values when connecting through pgAdmin on your laptop:
 
----
+Host: localhost
+Port: 5433
+Database: airflow
+Username: airflow
+Password: airflow
+Docker Connection
 
-## PostgreSQL Integration
+Inside Docker containers, Streamlit connects to PostgreSQL using:
 
-Gold tables are written to PostgreSQL at the end of the Gold build step, making them available as a low-latency SQL serving layer.
+Host: airflow-db
+Port: 5432
+Database: airflow
+Username: airflow
+Password: airflow
+Airflow Orchestration
 
-**Connection details (local / Docker setup):**
+Apache Airflow orchestrates the complete NexCart pipeline.
 
-| Setting  | Value      |
-|----------|------------|
-| Host     | `localhost` |
-| Port     | `5433`     |
-| Database | `airflow`  |
-| User     | `airflow`  |
-| Password | `airflow`  |
+DAG name:
 
-**How the dashboard connects:**
+nexcart_lakehouse_daily
 
-```python
-# dashboard/utils.py
-import psycopg2
-import pandas as pd
-import streamlit as st
+DAG location:
 
-_PG_KWARGS = dict(host="localhost", port=5433,
-                  dbname="airflow", user="airflow", password="airflow")
+airflow/dags/nexcart_lakehouse_dag.py
 
-def _pg_conn():
-    return psycopg2.connect(**_PG_KWARGS)
+Pipeline flow:
 
-@st.cache_data(ttl=300, show_spinner=False)
-def load_table(layer: str, table: str):
-    if layer == "gold":
-        conn = _pg_conn()
-        try:
-            return pd.read_sql(f'SELECT * FROM "{table}"', conn)
-        finally:
-            conn.close()
-```
+generate_data
+    ↓
+ingest_bronze
+    ↓
+transform_silver
+    ↓
+build_gold
+    ↓
+engineer_features
+    ↓
+run_quality_checks
 
-Results are cached for 5 minutes per table using `@st.cache_data`, preventing redundant queries on every page interaction.
+Airflow provides task scheduling, dependency management, run logs, and pipeline monitoring.
 
----
+Streamlit Dashboard
 
-## Airflow Orchestration
+The Streamlit dashboard provides an interactive interface for exploring the project outputs.
 
-The pipeline is fully automated via an Apache Airflow DAG running in Docker.
+Dashboard pages include:
 
-**DAG:** `nexcart_lakehouse_dag`
-**Schedule:** `@daily` (configurable)
-**Location:** `airflow/dags/nexcart_lakehouse_dag.py`
+Page	Description
+Home	Project overview and architecture
+Executive Overview	Business KPIs and revenue insights
+Gold Layer	Gold table explorer with charts
+Features Layer	ML feature table previews
+Quality Checks	Data quality results
+Pipeline Monitor	Pipeline status and table availability
 
-**Task graph:**
+The dashboard connects to PostgreSQL for Gold layer data and displays charts, table previews, and pipeline status.
 
-```
-generate_data → bronze → silver → gold → features → quality
-                                     └──────────────────────→ audit_log
-```
+DuckDB Utility
 
-**Key DAG properties:**
+DuckDB is included as an optional local query utility.
 
-| Property        | Value              |
-|-----------------|--------------------|
-| Schedule        | Daily (`@daily`)   |
-| Retries         | 2 per task         |
-| Retry delay     | 5 minutes          |
-| Catchup         | Disabled           |
-| Execution mode  | Sequential (local) |
+It can be used to explore Parquet outputs without starting Spark.
 
-**Start Airflow (Docker):**
+Example commands:
 
-```bash
-cd airflow
-docker compose up -d
-# Airflow UI → http://localhost:8080
-# Username: airflow  |  Password: airflow
-```
+python scripts/query_duckdb.py --list
+python scripts/query_duckdb.py --layer gold --table daily_revenue
+python scripts/query_duckdb.py --sql "SELECT * FROM gold__customer_ltv LIMIT 10"
 
-**Trigger a manual run:**
+DuckDB is not the main serving layer. The main serving layer for the dashboard is PostgreSQL.
 
-```bash
-docker exec -it <airflow-webserver-container> \
-  airflow dags trigger nexcart_lakehouse_dag
-```
-
-**View task logs:**
-
-```bash
-docker exec -it <airflow-webserver-container> \
-  airflow tasks logs nexcart_lakehouse_dag gold <run_id>
-```
-
----
-
-## Streamlit Dashboard
-
-The dashboard connects exclusively to PostgreSQL for Gold layer data and to local Parquet for Bronze / Silver / Features metadata.
-
-**Launch:**
-
-```bash
-streamlit run dashboard/app.py
-# http://localhost:8501
-```
-
-**Pages:**
-
-| Page                  | Content                                                     |
-|-----------------------|-------------------------------------------------------------|
-| **Home**              | Architecture overview, layer inventory, table availability  |
-| **Executive Overview**| C-suite KPIs: revenue, orders, AOV, churn, on-time delivery |
-| **Gold Layer**        | Interactive explorer for all 5 Gold tables with charts      |
-| **Features Layer**    | ML feature table previews and distributions                 |
-| **Quality Checks**    | DQ rule results, pass/fail rates, data health summary       |
-| **Pipeline Monitor**  | Run history, layer status, last execution timestamps        |
-
-**Data refresh:** Gold table queries are cached for 5 minutes. Force a refresh by clearing the Streamlit cache (`C` keyboard shortcut or restart the app).
-
----
-
-## Project Structure
-
-```
+Project Structure
 nexcart-lakehouse/
+├── airflow/
+│   ├── Dockerfile
+│   └── dags/
+│       └── nexcart_lakehouse_dag.py
+│
 ├── config/
-│   └── settings.yaml                    # Central config (paths, Spark settings)
+│   └── settings.yaml
+│
+├── dashboard/
+│   ├── app.py
+│   ├── utils.py
+│   ├── requirements.txt
+│   └── pages/
 │
 ├── data/
-│   ├── raw/              *.csv          # Source files — never modified
-│   ├── bronze/           *.parquet      # Immutable ingested archive
-│   ├── silver/           *.parquet      # Cleaned + enriched
-│   ├── gold/             *.parquet      # Aggregated (archive copy)
-│   └── features/         *.parquet      # ML-ready feature tables
+│   ├── raw/
+│   ├── bronze/
+│   ├── silver/
+│   ├── gold/
+│   └── features/
+│
+├── docs/
+│   └── images/
+│       ├── airflow_dag.png
+│       ├── dashboard_overview.png
+│       ├── gold_layer.png
+│       ├── postgres_revenue_data.png
+│       └── pipeline_monitor.png
+│
+├── logs/
+│   └── pipeline_runs.jsonl
+│
+├── scripts/
+│   ├── generate_data.py
+│   ├── generate_data_lite.py
+│   ├── query_duckdb.py
+│   ├── run_pipeline.py
+│   └── run_pipeline_audited.py
 │
 ├── src/
 │   ├── ingestion/
-│   │   └── bronze_ingestor.py           # CSV → Bronze Parquet
 │   ├── transformation/
-│   │   └── silver_transformer.py        # Bronze → Silver Parquet
 │   ├── gold/
-│   │   └── gold_builder.py              # Silver → Gold Parquet + PostgreSQL
 │   ├── features/
-│   │   └── feature_engineer.py          # Silver → Feature Parquet
 │   ├── quality/
-│   │   └── data_quality.py              # DQ checks + quality report
 │   └── utils/
-│       ├── spark_session.py             # SparkSession factory (Windows-safe)
-│       ├── parquet_utils.py             # Parquet read/write helpers
-│       ├── config_loader.py             # YAML config loader
-│       ├── pipeline_logger.py           # Audit log writer (JSONL)
-│       └── logger.py                    # Stdlib logging wrapper
 │
-├── dashboard/
-│   ├── app.py                           # Streamlit entry point
-│   ├── utils.py                         # Shared helpers, PostgreSQL connector
-│   ├── requirements.txt                 # Dashboard dependencies
-│   └── pages/
-│       ├── 1_Home.py
-│       ├── 2_Executive_Overview.py
-│       ├── 3_Gold_Layer.py
-│       ├── 4_Features_Layer.py
-│       ├── 5_Quality_Checks.py
-│       └── 6_Pipeline_Monitor.py
-│
-├── airflow/
-│   ├── docker-compose.yaml              # Airflow + PostgreSQL Docker setup
-│   └── dags/
-│       └── nexcart_lakehouse_dag.py     # Main pipeline DAG
-│
-├── scripts/
-│   ├── run_pipeline.py                  # One-command local runner
-│   ├── run_pipeline_audited.py          # Runner with full audit logging
-│   ├── query_duckdb.py                  # Ad-hoc Parquet SQL (no Spark)
-│   ├── generate_data_lite.py            # Synthetic data generator
-│   └── setup_env.sh                     # Environment setup helper
-│
-├── logs/
-│   ├── nexcart.log                      # Structured application log
-│   └── pipeline_runs.jsonl             # Audit trail (one JSON line per run)
-│
-└── requirements.txt                     # Project dependencies
-```
+├── tests/
+├── docker-compose.yml
+├── requirements.txt
+└── README.md
+Setup and Run
+Prerequisites
 
----
+Make sure these are installed:
 
-## Setup & Run
+Docker Desktop
+Python 3.11+
+Git
+pgAdmin 4
+VS Code
+Run with Docker
 
-### Prerequisites
+Run all commands from the root project folder:
 
-| Tool        | Version     | Notes                         |
-|-------------|-------------|-------------------------------|
-| Python      | 3.11+       |                               |
-| Java        | 11 or 17    | Required for PySpark          |
-| Docker      | 24+         | Required for Airflow          |
-| Docker Compose | 2.x      | Bundled with Docker Desktop   |
+nexcart-lakehouse/
+Step 1: Initialize Airflow
+docker compose up airflow-init
 
----
+Airflow login:
 
-### Step 1 — Install Python dependencies
+Username: admin
+Password: admin
+Step 2: Start Airflow
+docker compose up airflow-webserver airflow-scheduler
 
-```bash
-pip install -r requirements.txt
-```
+Open Airflow:
 
-Or install manually:
+http://localhost:8080
 
-```bash
-pip install pyspark==3.5.1 pyarrow pandas numpy pyyaml faker \
-            duckdb psycopg2-binary streamlit plotly
-```
+Turn on and trigger the DAG:
 
----
+nexcart_lakehouse_daily
+Step 3: Start Streamlit Dashboard
 
-### Step 2 — Generate synthetic data
+Open a new terminal and run:
 
-```bash
-python scripts/generate_data_lite.py
-# Generates ~345K rows across 7 retail source tables in data/raw/
-```
+docker compose up streamlit
 
----
+Open the dashboard:
 
-### Step 3 — Start Airflow (Docker)
+http://localhost:8501
+Step 4: Connect pgAdmin to PostgreSQL
 
-```bash
-cd airflow
-docker compose up -d
-```
+Use these connection details:
 
-- Airflow UI: [http://localhost:8080](http://localhost:8080)
-- PostgreSQL (shared): `localhost:5433`
-- Default credentials: `airflow / airflow`
+Host: localhost
+Port: 5433
+Database: airflow
+Username: airflow
+Password: airflow
 
-Wait for the webserver to be healthy (30–60 seconds), then enable and trigger the DAG from the UI or CLI.
+Example query:
 
----
+SELECT *
+FROM public.daily_revenue
+LIMIT 20;
+Manual Pipeline Commands
 
-### Step 4 — Run the pipeline
+The pipeline can also be run manually.
 
-**Option A — Via Airflow (recommended):**
+Run full pipeline:
 
-Trigger the `nexcart_lakehouse_dag` from the Airflow UI. It will run all layers in order and load Gold tables into PostgreSQL automatically.
+python scripts/run_pipeline.py
 
-**Option B — Via CLI (local, no Airflow):**
+Run individual layers:
 
-```bash
-# Full pipeline
-python scripts/run_pipeline_audited.py
-
-# Individual layers
+python scripts/run_pipeline.py --layer generate
 python scripts/run_pipeline.py --layer bronze
 python scripts/run_pipeline.py --layer silver
 python scripts/run_pipeline.py --layer gold
 python scripts/run_pipeline.py --layer features
 python scripts/run_pipeline.py --layer quality
-```
 
-**Run order if executing manually:**
+View pipeline history:
 
-```bash
-1. python scripts/generate_data_lite.py          # Synthetic retail data
-2. python -m src.ingestion.bronze_ingestor        # CSV → Bronze
-3. python -m src.transformation.silver_transformer # Bronze → Silver
-4. python -m src.gold.gold_builder                # Silver → Gold + PostgreSQL
-5. python -m src.features.feature_engineer        # Silver → Features
-6. python -m src.quality.data_quality             # DQ checks
-```
-
----
-
-### Step 5 — Launch the dashboard
-
-```bash
-cd dashboard
-streamlit run app.py --server.port 8501
-```
-
-Open [http://localhost:8501](http://localhost:8501). The dashboard reads Gold tables directly from PostgreSQL — no Parquet files required for the analytics views.
-
----
-
-### Step 6 — View pipeline history (optional)
-
-```bash
 python scripts/run_pipeline.py --history
-```
+Useful PostgreSQL Queries
 
----
+List all tables:
 
-### Step 7 — Query Parquet layers with DuckDB (optional)
+SELECT table_schema, table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+ORDER BY table_name;
 
-```bash
-# List all available tables
-python scripts/query_duckdb.py --list
+Preview daily revenue:
 
-# Query a specific table
-python scripts/query_duckdb.py --layer gold --table customer_ltv
+SELECT *
+FROM public.daily_revenue
+LIMIT 20;
 
-# Run custom SQL
-python scripts/query_duckdb.py --sql \
-  "SELECT carrier, AVG(on_time_rate_pct) FROM gold__fulfillment_kpis GROUP BY carrier"
-```
+Check row count:
 
----
+SELECT COUNT(*)
+FROM public.daily_revenue;
+Screenshots
+Airflow DAG
 
-## Storage Design
+Streamlit Dashboard Overview
 
-| Layer    | Format              | Purpose                                      |
-|----------|---------------------|----------------------------------------------|
-| raw      | CSV                 | Immutable source files, never modified       |
-| bronze   | Parquet (Snappy)    | Schema-enforced archive with audit columns   |
-| silver   | Parquet (Snappy)    | Cleaned, typed, deduplicated records         |
-| gold     | Parquet + PostgreSQL| KPI aggregations — Parquet archive + live DB |
-| features | Parquet (Snappy)    | Encoded ML training datasets with labels     |
+Gold Layer Explorer
 
----
+PostgreSQL Revenue Data
 
-## Observability & Audit
+Pipeline Monitor
 
-Every pipeline execution writes a structured record to `logs/pipeline_runs.jsonl`:
+What This Project Demonstrates
+Built an end-to-end retail data engineering pipeline
+Designed Raw, Bronze, Silver, Gold, and Features layers
+Used PySpark for data processing and transformations
+Used Airflow to orchestrate the workflow inside Docker
+Loaded Gold analytics tables into PostgreSQL
+Built a Streamlit dashboard connected to PostgreSQL
+Added data quality checks and pipeline monitoring
+Included DuckDB for optional local Parquet exploration
+Organized the project with clear structure, screenshots, and run commands
+Requirements
+pyspark
+pandas
+numpy
+pyarrow
+pyyaml
+faker
+duckdb
+psycopg2-binary
+streamlit
+plotly
+apache-airflow
 
-```json
-{
-  "run_id": "gold_20240315_143022",
-  "layer": "gold",
-  "status": "success",
-  "start_time": "2024-03-15T14:30:22",
-  "end_time": "2024-03-15T14:31:05",
-  "duration_s": 43.1,
-  "rows_written": 23258,
-  "tables": ["daily_revenue", "customer_ltv", "product_performance",
-             "inventory_health", "fulfillment_kpis"]
-}
-```
+Summary
 
-View the full audit trail:
-
-```bash
-python scripts/run_pipeline.py --history
-```
-
-Pipeline run status is also visible on the **Pipeline Monitor** page of the dashboard.
-
----
-
-## Screenshots
-
-> Dashboard pages running against live PostgreSQL data.
-
-| Page | Preview |
-|------|---------|
-| Executive Overview | *(KPI cards, revenue trend, channel split)* |
-| Gold Layer Explorer | *(Table selector, schema viewer, charts)* |
-| Pipeline Monitor | *(Layer status cards, run history table)* |
-| Quality Checks | *(DQ rule pass/fail, data health summary)* |
-
----
-
-## Why This Project — Interview Value
-
-- **Medallion Architecture** — demonstrates understanding of layered data design and incremental refinement
-- **Dual storage strategy** — Gold tables in both Parquet (batch) and PostgreSQL (serving), showing pragmatic storage decisions
-- **Production patterns** — connection pooling, query caching (`@st.cache_data`), proper resource cleanup, silent-failure handling
-- **Airflow orchestration** — real DAG with dependencies, retries, and scheduling — not just scripts
-- **Audit & observability** — every run is tracked; shows operational maturity beyond just making the pipeline work
-- **Data quality framework** — rule-based DQ checks with a report layer, not an afterthought
-- **Feature engineering** — four ML-ready datasets with labels, demonstrating bridge between DE and ML
-- **Full-stack** — raw data to interactive dashboard, end-to-end ownership
-
----
-
-## Requirements
-
-```
-pyspark==3.5.1
-pyarrow>=16.0.0
-pandas>=2.0.0
-numpy>=1.26.0
-pyyaml>=6.0
-faker>=24.0.0
-duckdb>=0.10.0
-psycopg2-binary>=2.9.0
-streamlit>=1.32.0
-plotly>=5.20.0
-```
-
----
-
-*Portfolio project demonstrating production-grade data engineering:
-Medallion Architecture · Distributed Processing · PostgreSQL Serving Layer ·
-Airflow Orchestration · Feature Engineering · Data Quality · Live Analytics Dashboard.*
+NexCart Lakehouse demonstrates a complete data engineering workflow from raw retail data to business analytics. It combines PySpark processing, Airflow orchestration, PostgreSQL serving, and Streamlit visualization in one project.
